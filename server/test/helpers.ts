@@ -58,7 +58,10 @@ export class Client {
   constructor(port: number) {
     this.ws = new WebSocket(`ws://127.0.0.1:${port}/ws`)
     this.ws.on('message', (data) => {
-      const m = JSON.parse(data.toString()) as ServerMessage
+      const text = Array.isArray(data)
+        ? Buffer.concat(data).toString('utf8')
+        : Buffer.from(data as ArrayBuffer).toString('utf8')
+      const m = JSON.parse(text) as ServerMessage
       this.messages.push(m)
       this.waiters = this.waiters.filter((w) => {
         if (!w.test(m)) return true

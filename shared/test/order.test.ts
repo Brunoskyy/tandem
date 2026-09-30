@@ -11,7 +11,7 @@ describe('fractional order', () => {
   })
 
   it('knows when a gap is exhausted', () => {
-    let lo = 0
+    const lo = 0
     let hi = ORDER_STEP
     let i = 0
     while (!needsRebalance(lo, hi)) {

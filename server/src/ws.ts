@@ -8,7 +8,7 @@ import {
   type Presence,
   type ServerMessage,
 } from '@tandem/shared'
-import { WebSocketServer, type WebSocket } from 'ws'
+import { WebSocketServer, type RawData, type WebSocket } from 'ws'
 
 import type { Connection, Room } from './room.ts'
 import type { Rooms } from './rooms.ts'
@@ -62,10 +62,11 @@ export function attachWebSockets(
       if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(message))
     }
 
-    ws.on('message', (data) => {
+    ws.on('message', (data, isBinary) => {
       let message: ClientMessage
       try {
-        message = JSON.parse(data.toString()) as ClientMessage
+        if (isBinary) throw new Error('binary')
+        message = JSON.parse(rawToString(data)) as ClientMessage
       } catch {
         send({ t: 'error', reason: 'not JSON' })
         return
@@ -143,4 +144,9 @@ export function attachWebSockets(
   })
 
   return wss
+}
+
+function rawToString(data: RawData): string {
+  if (Array.isArray(data)) return Buffer.concat(data).toString('utf8')
+  return Buffer.from(data as ArrayBuffer).toString('utf8')
 }
