@@ -2,7 +2,7 @@ import type { DatabaseSync as DatabaseSyncType } from 'node:sqlite'
 
 // Loaded through the runtime rather than an import statement: bundlers that
 // predate node:sqlite rewrite the specifier and break the build.
-const { DatabaseSync } = process.getBuiltinModule('node:sqlite') as typeof import('node:sqlite')
+const { DatabaseSync } = process.getBuiltinModule('node:sqlite')
 
 import type { BoardState, Op, SequencedOp } from '@tandem/shared'
 

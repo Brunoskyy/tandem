@@ -171,7 +171,7 @@ export function Board({ store, snapshot, board }: Props) {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="border-line bg-panel flex flex-wrap items-center gap-x-4 gap-y-2 border-b px-4 py-2.5">
+      <header className="border-line bg-panel flex flex-wrap items-center gap-x-4 gap-y-2 overflow-x-clip border-b px-4 py-2.5">
         <a
           href="/"
           className="text-accent font-mono text-xs tracking-wider uppercase"
@@ -186,7 +186,7 @@ export function Board({ store, snapshot, board }: Props) {
           label="Board name"
           maxLength={80}
         />
-        <div className="ml-auto flex items-center gap-3">
+        <div className="ml-auto flex flex-wrap items-center gap-x-3 gap-y-2">
           <div
             role="group"
             aria-label="Phase"
@@ -205,7 +205,7 @@ export function Board({ store, snapshot, board }: Props) {
             ))}
           </div>
           {board.phase === 'discuss' && (
-            <span className="text-muted text-sm" aria-live="polite">
+            <span className="text-muted text-sm whitespace-nowrap" aria-live="polite">
               {votesLeft} of {board.votesPerPerson} votes left
             </span>
           )}

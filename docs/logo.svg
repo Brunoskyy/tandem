@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Tandem">
+  <rect width="64" height="64" rx="15" fill="#0f766e"/>
+  <rect x="12" y="14" width="22" height="22" rx="3" fill="#fff4a3" transform="rotate(-6 23 25)"/>
+  <rect x="30" y="28" width="22" height="22" rx="3" fill="#cfe7ff" transform="rotate(5 41 39)"/>
+  <path d="M40 18 l7 3 l-3.5 1 l-1.5 3.5 z" fill="#ffffff" stroke="#0f766e" stroke-width="0.8"/>
+</svg>
