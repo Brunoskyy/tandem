@@ -218,13 +218,22 @@ export function Board({ store, snapshot, board }: Props) {
               {votesLeft} of {board.votesPerPerson} votes left
             </span>
           )}
-          <a
-            href={`/api/boards/${board.id}/export`}
-            className="border-line hover:bg-paper rounded-lg border px-3 py-1 text-sm"
-            download
-          >
-            Export
-          </a>
+          {board.phase === 'discuss' ? (
+            <a
+              href={`/api/boards/${board.id}/export`}
+              className="border-line hover:bg-paper rounded-lg border px-3 py-1 text-sm"
+              download
+            >
+              Export
+            </a>
+          ) : (
+            <span
+              className="border-line text-muted rounded-lg border px-3 py-1 text-sm opacity-60"
+              title="Reveal the board to export it"
+            >
+              Export
+            </span>
+          )}
           <button
             type="button"
             className="border-line hover:bg-paper rounded-lg border px-3 py-1 text-sm"
