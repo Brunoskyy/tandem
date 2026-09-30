@@ -7,6 +7,8 @@ export default defineConfig({
   platform: 'node',
   // The shared workspace is TypeScript source; bundle it in.
   noExternal: ['@tandem/shared'],
+  // esbuild's node22 target predates node:sqlite and would rewrite the import.
+  external: ['node:sqlite', 'ws'],
   sourcemap: true,
   clean: true,
 })

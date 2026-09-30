@@ -1,4 +1,8 @@
-import { DatabaseSync } from 'node:sqlite'
+import type { DatabaseSync as DatabaseSyncType } from 'node:sqlite'
+
+// Loaded through the runtime rather than an import statement: bundlers that
+// predate node:sqlite rewrite the specifier and break the build.
+const { DatabaseSync } = process.getBuiltinModule('node:sqlite') as typeof import('node:sqlite')
 
 import type { BoardState, Op, SequencedOp } from '@tandem/shared'
 
@@ -9,7 +13,7 @@ import type { BoardState, Op, SequencedOp } from '@tandem/shared'
  * sequence number rather than becoming a blob.
  */
 export class Store {
-  private readonly db: DatabaseSync
+  private readonly db: DatabaseSyncType
 
   constructor(path: string) {
     this.db = new DatabaseSync(path)
