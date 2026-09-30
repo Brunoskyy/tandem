@@ -1,0 +1,26 @@
+# One small machine is plenty: every board lives in memory while people are on
+# it and in SQLite on the volume otherwise. WebSockets need sticky sessions
+# only if you scale past one machine; don't.
+app = "tandem"
+primary_region = "gru"
+
+[build]
+
+[env]
+  PORT = "8787"
+  DATA_DIR = "/data"
+
+[http_service]
+  internal_port = 8787
+  force_https = true
+  auto_stop_machines = "suspend"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[mounts]]
+  source = "tandem_data"
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

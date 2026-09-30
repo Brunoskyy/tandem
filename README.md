@@ -43,6 +43,13 @@ window (a private one, so it gets its own name) to see the other side.
 | `npm start`                                                                  | production: one process serves the API, the sockets and the built client |
 | `docker build -t tandem . && docker run -p 8787:8787 -v tandem:/data tandem` | the same, in a container                                                 |
 
+## Deploying
+
+It is one Node process with a SQLite file, so anything that runs a container
+and keeps a volume will do. There is a `fly.toml`: `fly launch --copy-config`
+then `fly deploy`. Vercel and similar static hosts will not work, because
+the sockets need a process that stays up.
+
 ## How the sync works
 
 ```
