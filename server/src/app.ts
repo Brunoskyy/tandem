@@ -23,8 +23,12 @@ export interface App {
 export function createApp(options: AppOptions): App {
   const store = new Store(options.dbPath)
   const rooms = new Rooms(store, options.idleMs)
+  const handle = createRequestHandler({ rooms, staticDir: options.staticDir })
   const server = createServer((req, res) => {
-    void createRequestHandler({ rooms, staticDir: options.staticDir })(req, res)
+    handle(req, res).catch(() => {
+      if (!res.headersSent) res.writeHead(500)
+      res.end()
+    })
   })
   const wss = attachWebSockets(
     server,

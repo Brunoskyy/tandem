@@ -74,6 +74,13 @@ describe('boards over HTTP', () => {
       op: { opId: 'o3', actor: 'ana', at: 1, body: { kind: 'vote.set', noteId: 'n2', on: true } },
     })
     await ana.next('ops', (m) => m.ops[0]?.seq === 3)
+    const early = await fetch(`http://127.0.0.1:${t.port}/api/boards/${id}/export`)
+    expect(early.status).toBe(409)
+    ana.send({
+      t: 'op',
+      op: { opId: 'o4', actor: 'ana', at: 1, body: { kind: 'board.update', phase: 'discuss' } },
+    })
+    await ana.next('ops', (m) => m.ops[0]?.seq === 4)
     const md = await (await fetch(`http://127.0.0.1:${t.port}/api/boards/${id}/export`)).text()
     expect(md).toContain(
       '# Sprint 12\n\n## Went well\n\n- Pairing worked (1 vote)\n- Fewer meetings\n',
@@ -91,6 +98,10 @@ describe('sync over WebSocket', () => {
     const welcome = await ana.join(id, 'Ana')
     await bea.join(id, 'Bea')
     const col = Object.keys(welcome.state.columns)[0]!
+    ana.send({
+      t: 'op',
+      op: { opId: 'a0', actor: 'ana', at: 1, body: { kind: 'board.update', phase: 'discuss' } },
+    })
 
     ana.send({
       t: 'op',
@@ -135,19 +146,19 @@ describe('sync over WebSocket', () => {
     })
 
     const [a, b] = await Promise.all([
-      ana.next('ops', (m) => m.ops[0]?.seq === 3),
-      bea.next('ops', (m) => m.ops[0]?.seq === 3),
+      ana.next('ops', (m) => m.ops[0]?.seq === 4),
+      bea.next('ops', (m) => m.ops[0]?.seq === 4),
     ])
     expect(a).toEqual(b)
     const seqsSeenByAna = ana.messages
       .filter((m) => m.t === 'ops')
       .map((m) => (m as { ops: Array<{ seq: number }> }).ops[0]!.seq)
-    expect(seqsSeenByAna).toEqual([1, 2, 3])
+    expect(seqsSeenByAna).toEqual([1, 2, 3, 4])
 
     // A late joiner gets the resulting state, with the actor taken from the socket.
     const cid = client(t.port)
     const late = await cid.join(id, 'Cid')
-    expect(late.seq).toBe(3)
+    expect(late.seq).toBe(4)
     expect(late.state.notes.n1).toMatchObject({ text: 'edited by bea', authorId: 'ana' })
     expect(late.state.notes.n2).toMatchObject({ authorId: 'bea' })
     expect(late.participants.map((p) => p.name).sort()).toEqual(['Ana', 'Bea', 'Cid'])
@@ -184,8 +195,14 @@ describe('sync over WebSocket', () => {
       },
     })
     const rejected = await ana.next('rejected')
-    expect(rejected).toEqual({ t: 'rejected', opId: 'bad', reason: 'color is not in the palette' })
+    expect(rejected).toEqual({
+      t: 'rejected',
+      opId: 'bad',
+      reason: 'color is not in the palette',
+      code: 'invalid',
+    })
     expect(ana.messages.filter((m) => m.t === 'ops')).toHaveLength(1)
+    expect(await ana.next('known')).toEqual({ t: 'known', opId: 'dup' })
     const bea = client(t.port)
     expect((await bea.join(id, 'Bea')).seq).toBe(1)
   })
@@ -264,6 +281,125 @@ describe('sync over WebSocket', () => {
     }
     const r = await ana.next('rejected')
     expect(r.reason).toMatch(/too many/)
+  })
+})
+
+describe('review findings', () => {
+  it('keeps other people’s text out of the socket until the board is revealed', async () => {
+    const t = await boot()
+    const id = await createBoard(t)
+    const ana = client(t.port)
+    const bea = client(t.port)
+    const welcome = await ana.join(id, 'Ana')
+    await bea.join(id, 'Bea')
+    const col = Object.keys(welcome.state.columns)[0]!
+    ana.send({
+      t: 'op',
+      op: {
+        opId: 'a1',
+        actor: 'ana',
+        at: 1,
+        body: {
+          kind: 'note.create',
+          id: 'n1',
+          columnId: col,
+          text: 'secret',
+          color: 'yellow',
+          order: 0,
+        },
+      },
+    })
+    ana.send({
+      t: 'op',
+      op: {
+        opId: 'a2',
+        actor: 'ana',
+        at: 1,
+        body: { kind: 'note.update', id: 'n1', text: 'still secret', color: 'pink' },
+      },
+    })
+    const seen = await bea.next('ops', (m) => m.ops[0]?.seq === 2)
+    const first = bea.messages.find((m) => m.t === 'ops') as {
+      ops: Array<{ op: { body: { text?: string } } }>
+    }
+    expect(first.ops[0]?.op.body.text).toBe('')
+    expect(seen.ops[0]?.op.body).toEqual({ kind: 'note.update', id: 'n1', color: 'pink' })
+    expect(JSON.stringify(bea.messages)).not.toContain('secret')
+
+    const cid = client(t.port)
+    const late = await cid.join(id, 'Cid')
+    expect(late.state.notes.n1?.text).toBe('')
+    expect((await ana.next('ops', (m) => m.ops[0]?.seq === 2)).ops[0]?.op.body).toMatchObject({
+      text: 'still secret',
+    })
+
+    bea.send({
+      t: 'op',
+      op: { opId: 'b1', actor: 'bea', at: 1, body: { kind: 'board.update', phase: 'discuss' } },
+    })
+    const revealed = await cid.next('welcome', (m) => m.state.phase === 'discuss')
+    expect(revealed.state.notes.n1?.text).toBe('still secret')
+  })
+
+  it('refuses ids that every object already has', async () => {
+    const t = await boot()
+    const id = await createBoard(t)
+    const ana = client(t.port)
+    const welcome = await ana.join(id, 'Ana')
+    const col = Object.keys(welcome.state.columns)[0]!
+    for (const bad of ['constructor', '__proto__', 'toString']) {
+      ana.send({
+        t: 'op',
+        op: {
+          opId: `x-${bad}`,
+          actor: 'ana',
+          at: 1,
+          body: { kind: 'note.move', id: bad, columnId: col, order: 0 },
+        },
+      })
+      const r = await ana.next('rejected', (m) => m.opId === `x-${bad}`)
+      expect(r.reason).toMatch(/not a valid id/)
+    }
+    ana.send({
+      t: 'op',
+      op: { opId: 'v', actor: 'ana', at: 1, body: { kind: 'board.update', phase: 'discuss' } },
+    })
+    await ana.next('ops', (m) => m.ops[0]?.seq === 1)
+    const md = await (await fetch(`http://127.0.0.1:${t.port}/api/boards/${id}/export`)).text()
+    expect(md).not.toContain('constructor')
+  })
+
+  it('refuses participant colors outside the palette', async () => {
+    const t = await boot()
+    const id = await createBoard(t)
+    const ana = client(t.port)
+    await ana.open()
+    ana.send({
+      t: 'join',
+      boardId: id,
+      participant: { id: 'ana', name: 'Ana', color: 'url(//evil)' },
+      sinceSeq: 0,
+    })
+    const w = await ana.next('welcome')
+    expect(w.participants[0]?.color).toMatch(/^#[0-9a-f]{6}$/)
+  })
+
+  it('does not keep a room in memory for an HTTP read', async () => {
+    const t = await boot()
+    const id = await createBoard(t)
+    expect((await fetch(`http://127.0.0.1:${t.port}/api/boards/${id}`)).status).toBe(200)
+    t.app.rooms.sweep(Date.now() + 10 * 60_000)
+    // Peeking twice yields the same state and never a resident room.
+    expect(t.app.rooms.peek(id)?.title).toBe('Sprint 12')
+    expect((t.app.rooms as unknown as { rooms: Map<string, unknown> }).rooms.size).toBe(0)
+
+    const ana = client(t.port)
+    await ana.join(id, 'Ana')
+    expect((t.app.rooms as unknown as { rooms: Map<string, unknown> }).rooms.size).toBe(1)
+    ana.close()
+    await sleep(80)
+    t.app.rooms.sweep(Date.now() + 10 * 60_000)
+    expect((t.app.rooms as unknown as { rooms: Map<string, unknown> }).rooms.size).toBe(0)
   })
 })
 

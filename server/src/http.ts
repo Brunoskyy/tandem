@@ -50,21 +50,23 @@ export function createRequestHandler({ rooms, staticDir }: HttpOptions) {
         } catch {
           return json(res, 404, { error: 'not found' })
         }
-        const room = rooms.get(id)
-        if (!room) return json(res, 404, { error: 'not found' })
+        const state = rooms.peek(id)
+        if (!state) return json(res, 404, { error: 'not found' })
         if (boardMatch[2]) {
+          if (state.phase === 'write') {
+            return json(res, 409, {
+              error: 'The board is still in the writing phase. Reveal it first.',
+            })
+          }
+          const body = toMarkdown(state)
           res.writeHead(200, {
             'content-type': 'text/markdown; charset=utf-8',
-            'content-disposition': `attachment; filename="${safeFilename(room.state.title)}.md"`,
+            'content-disposition': `attachment; filename="${safeFilename(state.title)}.md"`,
           })
-          res.end(toMarkdown(room.state))
+          res.end(body)
           return
         }
-        return json(res, 200, {
-          id: room.state.id,
-          title: room.state.title,
-          phase: room.state.phase,
-        })
+        return json(res, 200, { id: state.id, title: state.title, phase: state.phase })
       }
 
       if (url.pathname.startsWith('/api/')) return json(res, 404, { error: 'not found' })
@@ -72,7 +74,8 @@ export function createRequestHandler({ rooms, staticDir }: HttpOptions) {
       if (staticDir) return serveStatic(res, staticDir, url.pathname)
       return json(res, 404, { error: 'not found' })
     } catch (e) {
-      json(res, 500, { error: e instanceof Error ? e.message : 'error' })
+      if (res.headersSent) res.destroy()
+      else json(res, 500, { error: e instanceof Error ? e.message : 'error' })
     }
   }
 }

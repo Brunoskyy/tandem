@@ -43,6 +43,12 @@ export function Board({ store, snapshot, board }: Props) {
   const [drag, setDrag] = useState<DragState | null>(null)
   const dragRef = useRef<DragState | null>(null)
   const currentEditing = useRef<Id | null>(null)
+  // The drop handler runs from a window listener; it reads the notes as they
+  // are at drop time, not as they were when the drag started.
+  const notesRef = useRef(notes)
+  useEffect(() => {
+    notesRef.current = notes
+  })
 
   // Cursor presence, in canvas coordinates so it survives everyone's scrolling.
   const onPointerMove = useCallback(
@@ -129,7 +135,6 @@ export function Board({ store, snapshot, board }: Props) {
       window.removeEventListener('pointerup', up)
       window.removeEventListener('pointercancel', up)
     }
-    // notes is read on drop only; re-subscribing on every keystroke would be wasteful.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [drag !== null, store])
 
@@ -153,6 +158,10 @@ export function Board({ store, snapshot, board }: Props) {
       }
       if (columnId === note.columnId && index === at) return
       for (const body of moveOps(notes, noteId, columnId, index)) store.dispatch(body)
+      // Moving across columns re-parents the card; give focus back once it is drawn.
+      requestAnimationFrame(() => {
+        document.querySelector<HTMLElement>(`[data-note-id="${noteId}"]`)?.focus()
+      })
     },
     [board.notes, columns, notes, store],
   )
@@ -286,7 +295,7 @@ export function Board({ store, snapshot, board }: Props) {
             background: `var(--color-note-${draggedNote.color})`,
           }}
         >
-          {draggedNote.text || <span className="opacity-50">Empty note</span>}
+          {draggedNote.text || <span className="opacity-50">Note</span>}
         </div>
       )}
 

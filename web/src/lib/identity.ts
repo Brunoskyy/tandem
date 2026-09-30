@@ -1,17 +1,8 @@
-import type { Participant } from '@tandem/shared'
+import { PEOPLE_COLORS, type Participant } from '@tandem/shared'
 
 import { newId } from './ids.ts'
 
-export const PEOPLE_COLORS = [
-  '#0f766e',
-  '#b45309',
-  '#7c3aed',
-  '#be185d',
-  '#1d4ed8',
-  '#15803d',
-  '#c2410c',
-  '#4338ca',
-] as const
+export { PEOPLE_COLORS }
 
 const KEY = 'tandem.identity'
 

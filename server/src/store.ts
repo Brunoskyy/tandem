@@ -69,14 +69,14 @@ export class Store {
     }
   }
 
+  /**
+   * The snapshot makes loading fast; the op log is kept whole. Its op ids are
+   * what makes a resent op harmless, and a board's whole history is small.
+   */
   saveSnapshot(state: BoardState, seq: number): void {
-    const tx = this.db.prepare('UPDATE boards SET snapshot = ?, snapshot_seq = ? WHERE id = ?')
-    tx.run(JSON.stringify(state), seq, state.id)
-    // Ops before the snapshot are no longer needed for recovery. Kept for a
-    // while so a client that was offline can still catch up by seq.
     this.db
-      .prepare('DELETE FROM ops WHERE board_id = ? AND seq <= ?')
-      .run(state.id, seq - KEEP_OPS_BEHIND_SNAPSHOT)
+      .prepare('UPDATE boards SET snapshot = ?, snapshot_seq = ? WHERE id = ?')
+      .run(JSON.stringify(state), seq, state.id)
   }
 
   opsSince(boardId: string, seq: number): SequencedOp[] {
@@ -90,5 +90,3 @@ export class Store {
     this.db.close()
   }
 }
-
-export const KEEP_OPS_BEHIND_SNAPSHOT = 500

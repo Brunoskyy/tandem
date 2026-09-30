@@ -1,7 +1,9 @@
 import {
   applyOp,
   applyOps,
+  opVisibleTo,
   parseOp,
+  visibleTo,
   InvalidMessage,
   type BoardState,
   type Id,
@@ -58,14 +60,18 @@ export class Room {
    */
   join(conn: Connection, _sinceSeq: number): void {
     this.connections.add(conn)
+    this.welcome(conn)
+    this.broadcastPresence()
+  }
+
+  private welcome(conn: Connection): void {
     conn.send({
       t: 'welcome',
-      state: this.state,
+      state: visibleTo(this.state, conn.participant.id),
       seq: this.seq,
       participants: this.presences(),
       you: conn.participant.id,
     })
-    this.broadcastPresence()
   }
 
   leave(conn: Connection): void {
@@ -89,6 +95,7 @@ export class Room {
         t: 'rejected',
         opId,
         reason: e instanceof InvalidMessage ? e.message : 'invalid op',
+        code: 'invalid',
       })
       return
     }
@@ -97,9 +104,11 @@ export class Room {
     const seq = this.seq + 1
     if (!this.store.appendOp(this.id, seq, op)) {
       // Same opId again: a client resent after a lost ack. It was applied the
-      // first time; the client will see it in the catch-up stream.
+      // first time; tell the client so it stops waiting.
+      conn.send({ t: 'known', opId: op.opId })
       return
     }
+    const before = this.state
     this.state = next
     this.seq = seq
     this.sinceSnapshot += 1
@@ -107,8 +116,13 @@ export class Room {
       this.store.saveSnapshot(this.state, this.seq)
       this.sinceSnapshot = 0
     }
-    const message: ServerMessage = { t: 'ops', ops: [{ seq, op }] }
-    for (const c of this.connections) c.send(message)
+    for (const c of this.connections) {
+      c.send({ t: 'ops', ops: [{ seq, op: opVisibleTo(before, op, c.participant.id) }] })
+    }
+    // Revealing the board: everyone now gets the text they were not sent before.
+    if (before.phase === 'write' && this.state.phase === 'discuss') {
+      for (const c of this.connections) this.welcome(c)
+    }
   }
 
   updatePresence(conn: Connection, cursor: Presence['cursor'], editing: Id | null): void {

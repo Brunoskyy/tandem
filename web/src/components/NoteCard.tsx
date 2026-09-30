@@ -58,20 +58,33 @@ export function NoteCard({
   // replaces it. While focused, ours wins until we blur.
   const [draft, setDraft] = useState(note.text)
   const focused = useRef(false)
+  // Only a draft the person actually typed into is sent. Looking at a note
+  // while someone else edits it must not send their old text back.
+  const dirty = useRef(false)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
-    if (!focused.current) setDraft(note.text)
+    if (!focused.current || !dirty.current) setDraft(note.text)
   }, [note.text])
   const flush = (text: string) => {
     if (timer.current) clearTimeout(timer.current)
     timer.current = null
-    if (text !== note.text) store.dispatch({ kind: 'note.update', id: note.id, text })
+    if (dirty.current && text !== note.text)
+      store.dispatch({ kind: 'note.update', id: note.id, text })
+    dirty.current = false
   }
   const onChange = (text: string) => {
+    dirty.current = true
     setDraft(text)
     if (timer.current) clearTimeout(timer.current)
     timer.current = setTimeout(() => flush(text), SAVE_DEBOUNCE_MS)
   }
+  // Unmounting while focused (a keyboard move to another column re-parents
+  // the card) never fires blur, so the "is editing" hint is cleared here.
+  useEffect(() => {
+    return () => {
+      if (focused.current) setEditing(null)
+    }
+  }, [setEditing])
 
   const textarea = useRef<HTMLTextAreaElement>(null)
   useEffect(() => {
@@ -118,13 +131,16 @@ export function NoteCard({
     const cleanup = () => {
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', cleanup)
+      window.removeEventListener('pointercancel', cleanup)
     }
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', cleanup)
+    // A touch that turns into a scroll cancels instead of releasing.
+    window.addEventListener('pointercancel', cleanup)
   }
 
   const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
-    if (!e.altKey) return
+    if (!e.altKey || hidden) return
     const map: Record<string, 'up' | 'down' | 'left' | 'right'> = {
       ArrowUp: 'up',
       ArrowDown: 'down',
@@ -147,12 +163,16 @@ export function NoteCard({
       className={`group relative rounded-lg text-sm shadow-sm transition-opacity ${dragging ? 'opacity-30' : ''}`}
       style={{ background: `var(--color-note-${note.color})` }}
     >
-      <div
-        className="h-3 cursor-grab rounded-t-lg active:cursor-grabbing"
-        onPointerDown={onGripPointerDown}
-        title="Drag to move"
-        aria-hidden="true"
-      />
+      {hidden ? (
+        <div className="h-3" aria-hidden="true" />
+      ) : (
+        <div
+          className="h-3 cursor-grab rounded-t-lg active:cursor-grabbing"
+          onPointerDown={onGripPointerDown}
+          title="Drag to move"
+          aria-hidden="true"
+        />
+      )}
       {hidden ? (
         <div className="px-3 pb-3" aria-hidden="true">
           <div className="space-y-1.5 opacity-40">

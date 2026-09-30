@@ -98,6 +98,19 @@ describe('NoteCard', () => {
     expect(dispatched[2]).toMatchObject({ kind: 'note.create', id: 'n1', text: 'Hello' })
   })
 
+  it('does not send stale text when leaving a note it only looked at', async () => {
+    const user = userEvent.setup()
+    const { dispatched } = setup({}, { phase: 'discuss' })
+    await user.click(screen.getByLabelText('Note text'))
+    await user.tab()
+    expect(dispatched).toEqual([])
+  })
+
+  it('gives hidden notes no drag handle', () => {
+    setup({ authorId: 'bea' })
+    expect(screen.queryByTitle('Drag to move')).toBeNull()
+  })
+
   it('says who else is editing', () => {
     setup({}, { phase: 'discuss' })
     expect(screen.getByText('you')).toBeInTheDocument()

@@ -3,6 +3,7 @@ import type { IncomingMessage, Server } from 'node:http'
 import {
   InvalidMessage,
   parseId,
+  parseParticipantColor,
   parseParticipantName,
   type ClientMessage,
   type Presence,
@@ -16,6 +17,7 @@ import type { Rooms } from './rooms.ts'
 const MAX_MESSAGE_BYTES = 64 * 1024
 export const DEFAULT_OPS_PER_SECOND = 40
 const HEARTBEAT_MS = 30_000
+const PRESENCE_PER_SECOND = 30
 
 export interface SocketOptions {
   /** Per-connection budget; a client past it gets its ops rejected until the next second. */
@@ -50,7 +52,11 @@ export function attachWebSockets(
     let conn: Connection | null = null
     let alive = true
     let tokens = opsPerSecond
-    const refill = setInterval(() => (tokens = opsPerSecond), 1000)
+    let presenceTokens = PRESENCE_PER_SECOND
+    const refill = setInterval(() => {
+      tokens = opsPerSecond
+      presenceTokens = PRESENCE_PER_SECOND
+    }, 1000)
     const heartbeat = setInterval(() => {
       if (!alive) return ws.terminate()
       alive = false
@@ -75,22 +81,21 @@ export function attachWebSockets(
         if (message.t === 'join') {
           if (room) throw new InvalidMessage('already joined')
           const boardId = parseId(message.boardId, 'board id')
+          // Validate the participant before a room is loaded, so a bad join
+          // cannot leave a room resident with nobody in it.
+          const participant: Presence = {
+            id: parseId(message.participant?.id, 'participant id'),
+            name: parseParticipantName(message.participant?.name),
+            color: parseParticipantColor(message.participant?.color),
+            cursor: null,
+            editing: null,
+            seenAt: Date.now(),
+          }
           const target = rooms.get(boardId)
           if (!target) {
             send({ t: 'error', reason: 'board not found' })
             ws.close(4004, 'board not found')
             return
-          }
-          const participant: Presence = {
-            id: parseId(message.participant?.id, 'participant id'),
-            name: parseParticipantName(message.participant?.name),
-            color:
-              typeof message.participant?.color === 'string'
-                ? message.participant.color.slice(0, 16)
-                : 'gray',
-            cursor: null,
-            editing: null,
-            seenAt: Date.now(),
           }
           room = target
           conn = { send, participant }
@@ -105,6 +110,7 @@ export function attachWebSockets(
                 t: 'rejected',
                 opId: message.op?.opId ?? '?',
                 reason: 'too many changes per second',
+                code: 'rate-limit',
               })
               return
             }
@@ -112,6 +118,9 @@ export function attachWebSockets(
             room.receiveOp(conn, message.op)
             return
           case 'presence': {
+            // Past the budget, presence is simply dropped: the next one wins anyway.
+            if (presenceTokens <= 0) return
+            presenceTokens -= 1
             const cursor =
               message.cursor &&
               typeof message.cursor.x === 'number' &&

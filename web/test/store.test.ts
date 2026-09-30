@@ -100,7 +100,12 @@ describe('BoardStore', () => {
       color: 'yellow',
       order: 0,
     })
-    ws.receive({ t: 'rejected', opId: op.opId, reason: 'text is longer than 500 characters' })
+    ws.receive({
+      t: 'rejected',
+      opId: op.opId,
+      reason: 'text is longer than 500 characters',
+      code: 'invalid',
+    })
     expect(store.getSnapshot().board?.notes.n1).toBeUndefined()
     expect(store.getSnapshot().toasts[0]?.text).toMatch(/not accepted: text is longer/)
   })
@@ -165,6 +170,51 @@ describe('BoardStore', () => {
     vi.advanceTimersByTime(20_000)
     expect(FakeSocket.instances).toHaveLength(1)
     expect(store.getSnapshot().fatal).toMatch(/does not exist/)
+  })
+
+  it('drops a pending op the server says it already has', () => {
+    const { store, ws, col } = connected()
+    const op = store.dispatch({
+      kind: 'note.create',
+      id: 'n1',
+      columnId: col,
+      text: 'hi',
+      color: 'yellow',
+      order: 0,
+    })
+    ws.receive({ t: 'known', opId: op.opId })
+    expect(store.getSnapshot().pendingCount).toBe(0)
+  })
+
+  it('keeps a rate-limited op and retries it', () => {
+    const { store, ws } = connected()
+    const op = store.dispatch({ kind: 'board.update', title: 'x' })
+    ws.receive({
+      t: 'rejected',
+      opId: op.opId,
+      reason: 'too many changes per second',
+      code: 'rate-limit',
+    })
+    expect(store.getSnapshot().pendingCount).toBe(1)
+    expect(store.getSnapshot().toasts).toEqual([])
+    const before = ws.sent.filter((m) => m.t === 'op').length
+    vi.advanceTimersByTime(1200)
+    expect(ws.sent.filter((m) => m.t === 'op').length).toBe(before + 1)
+  })
+
+  it('paces a long resend after reconnecting', () => {
+    const { store, ws, state } = connected()
+    ws.drop()
+    for (let i = 0; i < 45; i += 1) store.dispatch({ kind: 'board.update', title: `t${i}` })
+    vi.advanceTimersByTime(600)
+    const ws2 = FakeSocket.instances[1]!
+    ws2.open()
+    ws2.receive({ t: 'welcome', state, seq: 0, participants: [], you: 'ana' })
+    expect(ws2.sent.filter((m) => m.t === 'op')).toHaveLength(20)
+    vi.advanceTimersByTime(650)
+    expect(ws2.sent.filter((m) => m.t === 'op')).toHaveLength(40)
+    vi.advanceTimersByTime(650)
+    expect(ws2.sent.filter((m) => m.t === 'op')).toHaveLength(45)
   })
 
   it('throttles presence to the last value', () => {

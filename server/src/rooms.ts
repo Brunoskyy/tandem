@@ -21,6 +21,7 @@ export class Rooms {
     return state
   }
 
+  /** A room for a participant about to join. It stays resident until released. */
   get(id: string): Room | null {
     const existing = this.rooms.get(id)
     if (existing) {
@@ -34,8 +35,16 @@ export class Rooms {
     return room
   }
 
-  exists(id: string): boolean {
-    return this.rooms.has(id) || this.store.loadBoard(id) !== null
+  /**
+   * The current state for a read (an HTTP GET, an export) without keeping a
+   * room in memory for it. A resident room answers from memory.
+   */
+  peek(id: string): BoardState | null {
+    const resident = this.rooms.get(id)
+    if (resident) return resident.state
+    const loaded = this.store.loadBoard(id)
+    if (!loaded) return null
+    return new Room(this.store, loaded).state
   }
 
   /** Called when a connection leaves; the room is kept for a grace period. */

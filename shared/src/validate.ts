@@ -9,13 +9,17 @@ export const LIMITS = {
 } as const
 
 const ID_RE = /^[A-Za-z0-9_-]{1,40}$/
+/** Names every object already has. Lookups guard against them too; rejecting them here keeps logs clean. */
+const RESERVED = new Set(Object.getOwnPropertyNames(Object.prototype))
 
 export class InvalidMessage extends Error {}
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null
 
 function id(v: unknown, what: string): string {
-  if (typeof v !== 'string' || !ID_RE.test(v)) throw new InvalidMessage(`${what} is not a valid id`)
+  if (typeof v !== 'string' || !ID_RE.test(v) || RESERVED.has(v)) {
+    throw new InvalidMessage(`${what} is not a valid id`)
+  }
   return v
 }
 function text(v: unknown, what: string, max: number): string {
@@ -129,4 +133,21 @@ export function parseParticipantName(v: unknown): string {
 
 export function parseId(v: unknown, what = 'id'): string {
   return id(v, what)
+}
+
+export const PEOPLE_COLORS = [
+  '#0f766e',
+  '#b45309',
+  '#7c3aed',
+  '#be185d',
+  '#1d4ed8',
+  '#15803d',
+  '#c2410c',
+  '#4338ca',
+] as const
+
+/** A participant color is one of ours, never a string that ends up in a style attribute. */
+export function parseParticipantColor(v: unknown): string {
+  if (typeof v === 'string' && (PEOPLE_COLORS as readonly string[]).includes(v)) return v
+  return PEOPLE_COLORS[0]
 }

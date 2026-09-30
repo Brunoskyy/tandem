@@ -44,11 +44,20 @@ export interface SequencedOp {
  * (a note that was deleted, a duplicate create): those become no-ops rather
  * than errors, because with concurrent editors they are the normal case.
  */
+/**
+ * Records are plain objects keyed by client-chosen ids, so lookups must not
+ * fall through to the prototype: `notes['constructor']` is a function, and a
+ * truthy one. Every read goes through here.
+ */
+export function lookup<T>(record: Record<string, T>, id: string): T | undefined {
+  return Object.hasOwn(record, id) ? record[id] : undefined
+}
+
 export function applyOp(state: BoardState, op: Op): BoardState {
   const b = op.body
   switch (b.kind) {
     case 'note.create': {
-      if (state.notes[b.id] || !state.columns[b.columnId]) return state
+      if (lookup(state.notes, b.id) || !lookup(state.columns, b.columnId)) return state
       return {
         ...state,
         notes: {
@@ -68,7 +77,7 @@ export function applyOp(state: BoardState, op: Op): BoardState {
       }
     }
     case 'note.update': {
-      const note = state.notes[b.id]
+      const note = lookup(state.notes, b.id)
       if (!note) return state
       const next = { ...note, updatedAt: op.at }
       if (b.text !== undefined) next.text = b.text
@@ -76,22 +85,22 @@ export function applyOp(state: BoardState, op: Op): BoardState {
       return { ...state, notes: { ...state.notes, [b.id]: next } }
     }
     case 'note.move': {
-      const note = state.notes[b.id]
-      if (!note || !state.columns[b.columnId]) return state
+      const note = lookup(state.notes, b.id)
+      if (!note || !lookup(state.columns, b.columnId)) return state
       return {
         ...state,
         notes: { ...state.notes, [b.id]: { ...note, columnId: b.columnId, order: b.order } },
       }
     }
     case 'note.delete': {
-      if (!state.notes[b.id]) return state
+      if (!lookup(state.notes, b.id)) return state
       const { [b.id]: _gone, ...notes } = state.notes
       return { ...state, notes }
     }
     case 'vote.set': {
-      const note = state.notes[b.noteId]
+      const note = lookup(state.notes, b.noteId)
       if (!note) return state
-      const has = note.votes[op.actor] === true
+      const has = Object.hasOwn(note.votes, op.actor)
       if (has === b.on) return state
       if (b.on) {
         const used = countVotes(state, op.actor)
@@ -102,14 +111,14 @@ export function applyOp(state: BoardState, op: Op): BoardState {
       return { ...state, notes: { ...state.notes, [b.noteId]: { ...note, votes } } }
     }
     case 'column.create': {
-      if (state.columns[b.id]) return state
+      if (lookup(state.columns, b.id)) return state
       return {
         ...state,
         columns: { ...state.columns, [b.id]: { id: b.id, title: b.title, order: b.order } },
       }
     }
     case 'column.update': {
-      const col = state.columns[b.id]
+      const col = lookup(state.columns, b.id)
       if (!col) return state
       const next = { ...col }
       if (b.title !== undefined) next.title = b.title
@@ -117,7 +126,7 @@ export function applyOp(state: BoardState, op: Op): BoardState {
       return { ...state, columns: { ...state.columns, [b.id]: next } }
     }
     case 'column.delete': {
-      if (!state.columns[b.id]) return state
+      if (!lookup(state.columns, b.id)) return state
       if (Object.keys(state.columns).length <= 1) return state
       const { [b.id]: _gone, ...columns } = state.columns
       // Notes go with the column. Moving them elsewhere silently would surprise
@@ -144,6 +153,33 @@ export function applyOps(state: BoardState, ops: readonly Op[]): BoardState {
 
 export function countVotes(state: BoardState, participantId: Id): number {
   let n = 0
-  for (const note of Object.values(state.notes)) if (note.votes[participantId]) n += 1
+  for (const note of Object.values(state.notes))
+    if (Object.hasOwn(note.votes, participantId)) n += 1
   return n
+}
+
+/**
+ * What a participant is allowed to see: during the write phase, other
+ * people's note text is blank. The server applies this per connection, so
+ * the text never reaches a browser that should not have it.
+ */
+export function visibleTo(state: BoardState, participantId: Id): BoardState {
+  if (state.phase !== 'write') return state
+  const notes: BoardState['notes'] = {}
+  for (const note of Object.values(state.notes)) {
+    notes[note.id] = note.authorId === participantId ? note : { ...note, text: '' }
+  }
+  return { ...state, notes }
+}
+
+/** The same rule for a single op on its way to one participant. */
+export function opVisibleTo(state: BoardState, op: Op, participantId: Id): Op {
+  if (state.phase !== 'write' || op.actor === participantId) return op
+  const b = op.body
+  if (b.kind === 'note.create' && b.text !== '') return { ...op, body: { ...b, text: '' } }
+  if (b.kind === 'note.update' && b.text !== undefined) {
+    const { text: _hidden, ...rest } = b
+    return { ...op, body: rest }
+  }
+  return op
 }

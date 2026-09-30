@@ -33,6 +33,8 @@ export interface Snapshot {
 }
 
 const PENDING_KEY = (boardId: string) => `tandem.pending.${boardId}`
+const RESEND_BATCH = 20
+const RESEND_INTERVAL_MS = 600
 
 /**
  * The client's copy of a board. Two layers: `confirmed` is exactly what the
@@ -53,6 +55,7 @@ export class BoardStore {
   private readonly listeners = new Set<() => void>()
   private readonly connection: Connection
   private toastSeq = 0
+  private resendTimer: ReturnType<typeof setTimeout> | null = null
   private presenceTimer: ReturnType<typeof setTimeout> | null = null
   private lastPresence: { cursor: { x: number; y: number } | null; editing: Id | null } = {
     cursor: null,
@@ -94,6 +97,7 @@ export class BoardStore {
   stop(): void {
     this.connection.stop()
     if (this.presenceTimer) clearTimeout(this.presenceTimer)
+    if (this.resendTimer) clearTimeout(this.resendTimer)
   }
 
   subscribe = (l: () => void): (() => void) => {
@@ -145,8 +149,13 @@ export class BoardStore {
         this.seq = m.seq
         this.others = m.participants.filter((p) => p.id !== this.me.id)
         // Anything still pending was never acknowledged (or we never heard it
-        // was): send it again. The server ignores op ids it has already applied.
-        for (const op of this.pending) this.connection.send({ t: 'op', op })
+        // was): send it again. The server answers `known` for op ids it has
+        // already applied, and the resend is paced under the rate limit.
+        this.resendPending()
+        break
+      }
+      case 'known': {
+        this.dropPending(m.opId)
         break
       }
       case 'ops': {
@@ -165,12 +174,12 @@ export class BoardStore {
         this.others = m.participants.filter((p) => p.id !== this.me.id)
         break
       case 'rejected': {
-        const i = this.pending.findIndex((p) => p.opId === m.opId)
-        if (i !== -1) {
-          this.pending.splice(i, 1)
-          this.savePending()
-          this.toast(`A change was not accepted: ${m.reason}`)
+        if (m.code === 'rate-limit') {
+          // Not a verdict on the op, only on the pace. Keep it and try again.
+          this.scheduleResend(1100)
+          break
         }
+        if (this.dropPending(m.opId)) this.toast(`A change was not accepted: ${m.reason}`)
         break
       }
       case 'error':
@@ -182,6 +191,36 @@ export class BoardStore {
         break
     }
     this.emit()
+  }
+
+  private dropPending(opId: Id): boolean {
+    const i = this.pending.findIndex((p) => p.opId === opId)
+    if (i === -1) return false
+    this.pending.splice(i, 1)
+    this.savePending()
+    return true
+  }
+
+  /** Sends pending ops in small batches so a long offline queue does not trip the server's limit. */
+  private resendPending(offset = 0): void {
+    const batch = this.pending.slice(offset, offset + RESEND_BATCH)
+    for (const op of batch) this.connection.send({ t: 'op', op })
+    if (offset + RESEND_BATCH < this.pending.length) {
+      this.resendTimer = setTimeout(
+        () => this.resendPending(offset + RESEND_BATCH),
+        RESEND_INTERVAL_MS,
+      )
+    } else {
+      this.resendTimer = null
+    }
+  }
+
+  private scheduleResend(ms: number): void {
+    if (this.resendTimer) return
+    this.resendTimer = setTimeout(() => {
+      this.resendTimer = null
+      this.resendPending()
+    }, ms)
   }
 
   private compute(): Snapshot {
