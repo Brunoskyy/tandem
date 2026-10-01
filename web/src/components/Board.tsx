@@ -119,7 +119,7 @@ export function Board({ store, snapshot, board }: Props) {
       setDrag(null)
       if (!current?.target) return
       for (const body of moveOps(
-        notes,
+        notesRef.current,
         current.noteId,
         current.target.columnId,
         current.target.index,
