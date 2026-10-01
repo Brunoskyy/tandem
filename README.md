@@ -11,44 +11,61 @@
 
 <br>
 
-Sticky notes, columns, votes and live cursors, shared by everyone with the
-link. People write in private first, so nobody anchors on the first card;
-then the board is revealed, votes open, and the result exports as markdown.
+Sticky notes, columns, votes and live cursors for everyone with the link.
+People write in private first, so nobody anchors on the first card; then the
+board is revealed, votes open, and the result exports as markdown. The name
+is the point of it: several people working on one board in tandem.
 
-The part I built this for is underneath: a small sync protocol you can read
-in one sitting. No CRDT library, no Firebase. Every change is an op, the
-server orders them, and each client keeps its own unconfirmed ops replayed
-on top of what the server has confirmed. That is what makes an edit show up
-instantly, survive a lost connection, and still end up identical on every
-screen.
+The part I built it for is underneath: a sync protocol you can read in one
+sitting. No CRDT library, no Firebase. Every change is an op, the server
+orders them, and each client replays its own unconfirmed ops on top of what
+the server confirmed. That is why an edit shows up instantly, survives a lost
+connection, and ends up identical on every screen.
 
 ![Two people on a board in the discussion phase](docs/screenshots/discussing.jpg)
 
 ## Running it
 
-```bash
-nvm use            # Node 24, for node:sqlite
-npm install
-npm run dev        # API on :8787, Vite on :5173 proxying /api and /ws
-```
+You need Node 24 (`nvm use` reads the `.nvmrc`; `node:sqlite` needs it). No
+database to install: the server keeps a SQLite file in `data/`. It takes two
+terminals.
 
-Open http://localhost:5173, create a board, and open the link in a second
-window (a private one, so it gets its own name) to see the other side.
+1. Clone and install:
 
-| Command                                                                      |                                                                          |
-| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `npm test`                                                                   | all three workspaces                                                     |
-| `npm run typecheck`                                                          | `tsc` per workspace                                                      |
-| `npm run build`                                                              | client to `web/dist`, server to `server/dist`                            |
-| `npm start`                                                                  | production: one process serves the API, the sockets and the built client |
-| `docker build -t tandem . && docker run -p 8787:8787 -v tandem:/data tandem` | the same, in a container                                                 |
+   ```bash
+   git clone https://github.com/Brunoskyy/tandem.git && cd tandem
+   nvm use
+   npm install
+   ```
 
-## Deploying
+2. **Terminal 1, from the repo root:** the API and WebSocket server, on port 8787.
 
-It is one Node process with a SQLite file, so anything that runs a container
-and keeps a volume will do. There is a `fly.toml`: `fly launch --copy-config`
-then `fly deploy`. Vercel and similar static hosts will not work, because
-the sockets need a process that stays up.
+   ```bash
+   npm run dev -w server
+   ```
+
+3. **Terminal 2, from the repo root:** the web app, on port 5173. It proxies
+   `/api` and `/ws` to the server.
+
+   ```bash
+   npm run dev -w web
+   ```
+
+4. Open http://localhost:5173, create a board, and open its link in a private
+   window too, so the second window joins as another person.
+
+Stop with Ctrl+C in both terminals. To start over, delete the `data/` folder.
+
+| Command (repo root) | |
+| --- | --- |
+| `npm test` | all three workspaces |
+| `npm run typecheck` | `tsc` per workspace |
+| `npm run build && npm start` | production: one process on port 8787 serves the API, the sockets and the built client |
+| `docker build -t tandem . && docker run -p 8787:8787 -v tandem:/data tandem` | the same, in a container |
+
+To deploy, anything that runs a container with a volume works; there is a
+`fly.toml` (`fly launch --copy-config`, then `fly deploy`). Static hosts like
+Vercel won't, because the sockets need a process that stays up.
 
 ## How the sync works
 
@@ -62,100 +79,50 @@ client                          server                         other clients
   │ drop from pending              │                                │
 ```
 
-- **The board is a plain object; every change is an op.** `applyOp` in
-  `shared/src/ops.ts` is pure and idempotent. Stale ops (a note that was
-  deleted, a duplicate create) are no-ops rather than errors, because with
-  several people editing they are the normal case.
+- **Every change is an op.** `applyOp` in `shared/src/ops.ts` is pure and
+  idempotent; stale ops (a note already deleted) are no-ops, because with
+  several editors they are normal.
 - **The server is the clock.** One room per board, one thread, a sequence
-  number per accepted op. "Last writer wins" simply means "the op the server
-  saw last". There is nothing to lock.
-- **Clients are optimistic, and honest about it.** The store keeps
-  `confirmed` (exactly what the server sent, in order) and `pending` (what we
-  changed and have not heard back about). The view is `pending` replayed
-  over `confirmed`. When our op comes back with a seq it moves from one to
-  the other, and the view does not flicker because the result is the same.
-- **Reconnects are boring.** Pending ops live in `localStorage`. On reconnect
-  the client joins again, gets the full state, and resends whatever is still
-  pending. The server ignores op ids it has already applied, so a retry after
-  a lost ack is safe.
-- **Positions are fractional.** Dragging a card between two others takes the
-  midpoint of their positions, so nobody else's card has to move and two
-  drags in the same column do not fight. Doubles run out of room after a few
-  dozen inserts into the same gap; the client notices and spreads the column
-  back out.
-- **Votes are a set per participant.** Two people voting on the same note at
-  the same time cannot clobber each other, and the per-person cap is checked
-  in `applyOp`, so it holds no matter which order the server picks.
+  number per op. "Last writer wins" means "the op the server saw last".
+- **Clients are optimistic.** The view is `pending` replayed over `confirmed`,
+  so our own edits show at once and don't flicker when the server confirms them.
+- **Reconnects are boring.** Pending ops live in `localStorage` and are resent
+  on reconnect; the server ignores op ids it already applied.
+- **Positions are fractional,** so a drag never moves anyone else's card, and
+  the column is spread back out when doubles run out of room.
+- **Votes are a set per participant,** with the per-person cap checked in
+  `applyOp`, so it holds whatever order the server picks.
 
 ## Things worth opening
 
-**`shared/src/validate.ts`.** Hand-written parsers instead of a schema
-library. There are nine op shapes, the error messages say what a person did
-wrong, and unknown fields never reach the state. The actor of every op is the
-participant who joined on that socket, whatever the message claims.
-
-**`web/src/sync/store.ts`.** The confirmed/pending split, about 150 lines.
-The tests drive it with a fake socket: drop the connection, edit offline,
-reconnect, watch the edit resend and land.
-
-**`web/src/components/Board.tsx`.** Drag and drop with pointer events and
-`elementFromPoint`, no library. The column under the pointer and the
-midpoints of its cards decide the drop index. Alt with an arrow key does the
-same thing from the keyboard.
-
-**`server/src/store.ts`.** Persistence is a snapshot plus the ops since it,
-in SQLite through `node:sqlite`, so there is no native module to build. A
-restart replays the tail. The op log doubles as the source for a client
-catching up by sequence number.
-
-**Presence is separate from state.** Cursors and "Bea is editing" go over
-the same socket but never touch the board or the log. They are throttled to
-one message per 50ms with the last value winning.
+- **`shared/src/validate.ts`:** hand-written parsers for the nine op shapes.
+  The actor of an op is whoever joined on that socket, whatever the message claims.
+- **`web/src/sync/store.ts`:** the confirmed/pending split in about 150 lines,
+  tested with a fake socket that drops and comes back.
+- **`web/src/components/Board.tsx`:** drag and drop with pointer events and no
+  library; Alt with an arrow key does the same from the keyboard.
+- **`server/src/store.ts`:** a snapshot plus the ops since it, in SQLite, so a
+  restart replays the tail.
 
 ## Tests
 
-```bash
-npm test
-```
-
-43 tests. The shared layer is covered as pure functions: op semantics,
-concurrent edits in both orders, the vote cap, fractional ordering,
-validation of everything a client could send. The server tests start a real
-process on a random port and talk to it with real sockets: two clients
-converging, a late joiner, duplicate and invalid ops, actor spoofing, presence
-on disconnect, rate limiting, and a restart with sixty ops and a snapshot in
-between. The client tests use a fake socket to script the connection going
-away and coming back.
+52 tests, run with `npm test` from the repo root. Shared logic as pure
+functions (concurrent edits in both orders, the vote cap, validation); server
+tests over real sockets on a random port (convergence, late joiners, duplicate
+and spoofed ops, rate limiting, a restart mid-board); client tests that script
+the connection going away and coming back.
 
 ## Layout
 
 ```
-shared/src/
-  types.ts       board, note, column, participant
-  ops.ts         applyOp: the one function that changes state
-  order.ts       fractional positions
-  validate.ts    untrusted JSON to Op, or an error that says why
-  protocol.ts    messages in each direction
-server/src/
-  room.ts        one board: order, persist, broadcast
-  rooms.ts       load on first join, evict when idle
-  store.ts       SQLite: snapshot + op log per board
-  ws.ts          join handshake, rate limit, heartbeat
-  http.ts        create, export, static files with SPA fallback
-web/src/
-  sync/          connection (reconnect, backoff) and the store
-  components/    Board, Column, NoteCard, Cursors, Presence
-  lib/dnd.ts     drop index and move ops, pure
+shared/src/   types, applyOp, fractional order, validation, protocol
+server/src/   rooms, SQLite store, WebSocket handshake, HTTP and export
+web/src/      sync (connection and store), components, drag and drop
 ```
 
 ## What's missing
 
-- No accounts. Whoever has the link is in, and the name you pick is the
-  name you get. Fine for a team call, not for anything sensitive.
-- Text conflicts are last-writer-wins per note, not per character. Two
-  people typing in the same card at the same second will lose one of the
-  edits; the "is editing" hint exists to make that rare, not impossible.
-  Character-level merging is what a CRDT is for, and a sticky note did not
-  justify one.
-- Boards are never deleted. There is no owner to ask.
-- A shared timer would be a natural next op.
+- No accounts: whoever has the link is in.
+- Text conflicts are last-writer-wins per note, not per character; the
+  "is editing" hint makes a lost edit rare, not impossible.
+- Boards are never deleted, and there is no shared timer yet.
