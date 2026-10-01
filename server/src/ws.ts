@@ -20,7 +20,10 @@ const HEARTBEAT_MS = 30_000
 const PRESENCE_PER_SECOND = 30
 
 export interface SocketOptions {
-  /** Per-connection budget; a client past it gets its ops rejected until the next second. */
+  /**
+   * Per-connection budget in a fixed one-second window: a client past it gets
+   * its ops rejected until the window resets.
+   */
   opsPerSecond?: number
 }
 
@@ -51,11 +54,15 @@ export function attachWebSockets(
     let room: Room | null = null
     let conn: Connection | null = null
     let alive = true
-    let tokens = opsPerSecond
-    let presenceTokens = PRESENCE_PER_SECOND
-    const refill = setInterval(() => {
-      tokens = opsPerSecond
-      presenceTokens = PRESENCE_PER_SECOND
+    // Rate limits are a fixed window, not a token bucket: both budgets reset
+    // to full every second, counted from when the socket opened. A client can
+    // spend a whole budget at the end of one window and another at the start
+    // of the next, which is fine for a cap meant to stop floods.
+    let opsLeft = opsPerSecond
+    let presenceLeft = PRESENCE_PER_SECOND
+    const resetWindow = setInterval(() => {
+      opsLeft = opsPerSecond
+      presenceLeft = PRESENCE_PER_SECOND
     }, 1000)
     const heartbeat = setInterval(() => {
       if (!alive) return ws.terminate()
@@ -104,7 +111,7 @@ export function attachWebSockets(
         if (!room || !conn) throw new InvalidMessage('join first')
         switch (message.t) {
           case 'op':
-            if (tokens <= 0) {
+            if (opsLeft <= 0) {
               send({
                 t: 'rejected',
                 opId: message.op?.opId ?? '?',
@@ -113,13 +120,13 @@ export function attachWebSockets(
               })
               return
             }
-            tokens -= 1
+            opsLeft -= 1
             room.receiveOp(conn, message.op)
             return
           case 'presence': {
             // Past the budget, presence is simply dropped: the next one wins anyway.
-            if (presenceTokens <= 0) return
-            presenceTokens -= 1
+            if (presenceLeft <= 0) return
+            presenceLeft -= 1
             const cursor =
               message.cursor &&
               typeof message.cursor.x === 'number' &&
@@ -142,7 +149,7 @@ export function attachWebSockets(
     })
 
     ws.on('close', () => {
-      clearInterval(refill)
+      clearInterval(resetWindow)
       clearInterval(heartbeat)
       if (room && conn) {
         room.leave(conn)
