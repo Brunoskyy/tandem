@@ -9,7 +9,7 @@ import type { BoardStore } from '../src/sync/store.ts'
 let n = 0
 const board = () => newBoard('b1', 'Retro', TEMPLATES[0]!, () => `c${++n}`)
 const me = { id: 'ana', name: 'Ana', color: '#000' }
-const bea = { id: 'bea', name: 'Bea', color: '#111', cursor: null, editing: null, seenAt: 0 }
+const bea = { id: 'bea', name: 'Bea', color: '#111', cursor: null, editing: null }
 
 function setup(
   overrides: Partial<Note> = {},

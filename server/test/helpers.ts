@@ -97,9 +97,9 @@ export class Client {
     )
   }
 
-  async join(boardId: string, name: string, id = name.toLowerCase(), sinceSeq = 0) {
+  async join(boardId: string, name: string, id = name.toLowerCase()) {
     await this.open()
-    this.send({ t: 'join', boardId, participant: { id, name, color: 'teal' }, sinceSeq })
+    this.send({ t: 'join', boardId, participant: { id, name, color: 'teal' } })
     return this.next('welcome')
   }
 

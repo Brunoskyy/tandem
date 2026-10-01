@@ -263,7 +263,6 @@ describe('sync over WebSocket', () => {
       t: 'join',
       boardId: 'missing',
       participant: { id: 'x', name: 'X', color: 'teal' },
-      sinceSeq: 0,
     })
     expect((await d.closed()).code).toBe(4004)
   })
@@ -378,7 +377,6 @@ describe('review findings', () => {
       t: 'join',
       boardId: id,
       participant: { id: 'ana', name: 'Ana', color: 'url(//evil)' },
-      sinceSeq: 0,
     })
     const w = await ana.next('welcome')
     expect(w.participants[0]?.color).toMatch(/^#[0-9a-f]{6}$/)

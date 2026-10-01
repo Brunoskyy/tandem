@@ -89,7 +89,6 @@ export function attachWebSockets(
             color: parseParticipantColor(message.participant?.color),
             cursor: null,
             editing: null,
-            seenAt: Date.now(),
           }
           const target = rooms.get(boardId)
           if (!target) {
@@ -99,7 +98,7 @@ export function attachWebSockets(
           }
           room = target
           conn = { send, participant }
-          room.join(conn, typeof message.sinceSeq === 'number' ? message.sinceSeq : 0)
+          room.join(conn)
           return
         }
         if (!room || !conn) throw new InvalidMessage('join first')

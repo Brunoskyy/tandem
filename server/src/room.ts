@@ -53,12 +53,11 @@ export class Room {
   }
 
   /**
-   * A joining client always gets the full state. On a reconnect it would be
-   * possible to send only the ops after `sinceSeq`, but a board is small
-   * (hundreds of notes at most) and one message that is always right beats
-   * two code paths. `sinceSeq` is kept in the protocol for that future.
+   * A joining client always gets the full state, reconnects included. A board
+   * is small (hundreds of notes at most), and one message that is always
+   * right beats a second code path that replays only what was missed.
    */
-  join(conn: Connection, _sinceSeq: number): void {
+  join(conn: Connection): void {
     this.connections.add(conn)
     this.welcome(conn)
     this.broadcastPresence()
@@ -128,12 +127,7 @@ export class Room {
   updatePresence(conn: Connection, cursor: Presence['cursor'], editing: Id | null): void {
     conn.participant.cursor = cursor
     conn.participant.editing = editing
-    conn.participant.seenAt = Date.now()
     this.broadcastPresence()
-  }
-
-  opsSince(seq: number): SequencedOp[] {
-    return this.store.opsSince(this.id, seq)
   }
 
   flush(): void {

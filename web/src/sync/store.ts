@@ -80,7 +80,6 @@ export class BoardStore {
       url,
       boardId,
       participant: me,
-      sinceSeq: () => this.seq,
       onMessage: (m) => this.receive(m),
       onStatus: (s) => {
         this.status = s

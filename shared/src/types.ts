@@ -57,6 +57,4 @@ export interface Presence extends Participant {
   cursor: { x: number; y: number } | null
   /** Note the person has open for editing, so others get a hint before they collide. */
   editing: Id | null
-  /** Server-side: last time this presence was refreshed. */
-  seenAt: number
 }

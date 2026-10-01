@@ -28,7 +28,7 @@ afterEach(() => vi.useRealTimers())
 describe('BoardStore', () => {
   it('joins on open and exposes the welcome state', () => {
     const { store, ws } = connected()
-    expect(ws.sent[0]).toMatchObject({ t: 'join', boardId: 'b1', participant: me, sinceSeq: 0 })
+    expect(ws.sent[0]).toMatchObject({ t: 'join', boardId: 'b1', participant: me })
     expect(store.getSnapshot().status).toBe('online')
     expect(store.getSnapshot().board?.title).toBe('Retro')
   })
@@ -129,7 +129,7 @@ describe('BoardStore', () => {
     const ws2 = FakeSocket.instances[1]!
     expect(ws2).not.toBe(ws)
     ws2.open()
-    expect(ws2.sent[0]).toMatchObject({ t: 'join', sinceSeq: 0 })
+    expect(ws2.sent[0]).toMatchObject({ t: 'join' })
     ws2.receive({ t: 'welcome', state, seq: 0, participants: [], you: 'ana' })
     expect(ws2.sent[1]).toMatchObject({ t: 'op', op: { opId: op.opId } })
     expect(store.getSnapshot().status).toBe('online')

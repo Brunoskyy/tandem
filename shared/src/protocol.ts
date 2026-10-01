@@ -3,13 +3,7 @@ import type { BoardState, Id, Presence } from './types.ts'
 
 /** Client to server. */
 export type ClientMessage =
-  | {
-      t: 'join'
-      boardId: Id
-      participant: { id: Id; name: string; color: string }
-      /** Highest seq the client has applied; the server replays what came after. */
-      sinceSeq: number
-    }
+  | { t: 'join'; boardId: Id; participant: { id: Id; name: string; color: string } }
   | { t: 'op'; op: Op }
   | { t: 'presence'; cursor: { x: number; y: number } | null; editing: Id | null }
   | { t: 'ping' }

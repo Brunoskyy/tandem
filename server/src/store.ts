@@ -9,8 +9,8 @@ import type { BoardState, Op, SequencedOp } from '@tandem/shared'
 /**
  * Persistence is a snapshot plus the ops since it, per board. Restart, load
  * the snapshot, replay the tail, and the room is back where it was. The op
- * log is also what a reconnecting client asks for, so it stays queryable by
- * sequence number rather than becoming a blob.
+ * log is rows keyed by sequence number and op id rather than a blob, so the
+ * tail is one range query and a resent op is caught by a unique index.
  */
 export class Store {
   private readonly db: DatabaseSyncType
@@ -77,13 +77,6 @@ export class Store {
     this.db
       .prepare('UPDATE boards SET snapshot = ?, snapshot_seq = ? WHERE id = ?')
       .run(JSON.stringify(state), seq, state.id)
-  }
-
-  opsSince(boardId: string, seq: number): SequencedOp[] {
-    const rows = this.db
-      .prepare('SELECT seq, op FROM ops WHERE board_id = ? AND seq > ? ORDER BY seq')
-      .all(boardId, seq) as Array<{ seq: number; op: string }>
-    return rows.map((r) => ({ seq: r.seq, op: JSON.parse(r.op) as Op }))
   }
 
   close(): void {

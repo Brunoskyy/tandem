@@ -6,7 +6,6 @@ export interface ConnectionOptions {
   url: string
   boardId: string
   participant: Participant
-  sinceSeq: () => number
   onMessage: (m: ServerMessage) => void
   onStatus: (s: Status) => void
   /** Injectable for tests. */
@@ -68,7 +67,6 @@ export class Connection {
           t: 'join',
           boardId: this.options.boardId,
           participant: this.options.participant,
-          sinceSeq: this.options.sinceSeq(),
         } satisfies ClientMessage),
       )
     }
