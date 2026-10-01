@@ -106,7 +106,7 @@ client                          server                         other clients
 
 ## Tests
 
-52 tests, run with `npm test` from the repo root. Shared logic as pure
+55 tests, run with `npm test` from the repo root. Shared logic as pure
 functions (concurrent edits in both orders, the vote cap, validation); server
 tests over real sockets on a random port (convergence, late joiners, duplicate
 and spoofed ops, rate limiting, a restart mid-board); client tests that script
