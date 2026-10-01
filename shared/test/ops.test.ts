@@ -71,6 +71,33 @@ describe('applyOp', () => {
     ).toBe(created)
   })
 
+  it('never takes a prototype property for a note or a column', () => {
+    const s = board()
+    const col = firstColumn(s)
+    for (const id of ['constructor', 'toString', 'hasOwnProperty']) {
+      expect(applyOp(s, op({ kind: 'note.update', id, text: 'x' }))).toBe(s)
+      expect(applyOp(s, op({ kind: 'note.move', id, columnId: col, order: 0 }))).toBe(s)
+      expect(applyOp(s, op({ kind: 'note.delete', id }))).toBe(s)
+      expect(applyOp(s, op({ kind: 'vote.set', noteId: id, on: true }))).toBe(s)
+      expect(applyOp(s, op({ kind: 'column.update', id, title: 'x' }))).toBe(s)
+      expect(applyOp(s, op({ kind: 'column.delete', id }))).toBe(s)
+      expect(
+        applyOp(
+          s,
+          op({ kind: 'note.create', id: 'n1', columnId: id, text: '', color: 'blue', order: 0 }),
+        ),
+      ).toBe(s)
+      const created = applyOp(
+        s,
+        op({ kind: 'note.create', id, columnId: col, text: 'real', color: 'blue', order: 0 }),
+      )
+      expect(Object.hasOwn(created.notes, id)).toBe(true)
+      expect(created.notes[id]).toMatchObject({ text: 'real', votes: {} })
+      const column = applyOp(s, op({ kind: 'column.create', id, title: 'Real', order: 9 }))
+      expect(Object.hasOwn(column.columns, id)).toBe(true)
+    }
+  })
+
   it('server order decides concurrent edits to the same note', () => {
     const s = board()
     const col = firstColumn(s)
