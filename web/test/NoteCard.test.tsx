@@ -106,6 +106,17 @@ describe('NoteCard', () => {
     expect(dispatched).toEqual([])
   })
 
+  it('sends a typed draft once, not again on blur after the debounce sent it', async () => {
+    const user = userEvent.setup()
+    const { dispatched } = setup()
+    const ta = screen.getByLabelText('Note text')
+    await user.type(ta, '!')
+    await new Promise((r) => setTimeout(r, 400))
+    expect(dispatched).toEqual([{ kind: 'note.update', id: 'n1', text: 'Hello!' }])
+    await user.tab()
+    expect(dispatched).toHaveLength(1)
+  })
+
   it('gives hidden notes no drag handle', () => {
     setup({ authorId: 'bea' })
     expect(screen.queryByTitle('Drag to move')).toBeNull()
